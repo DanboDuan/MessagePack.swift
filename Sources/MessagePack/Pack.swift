@@ -8,8 +8,8 @@ import Foundation
 /// - returns: An byte array representation.
 func packInteger(_ value: UInt64, parts: Int) -> Data {
     precondition(parts > 0)
-    let bytes = stride(from: (8 * (parts - 1)), through: 0, by: -8).map { shift in
-        return UInt8(truncatingIfNeeded: value >> UInt64(shift))
+    let bytes = stride(from: 8 * (parts - 1), through: 0, by: -8).map { shift in
+        UInt8(truncatingIfNeeded: value >> UInt64(shift))
     }
     return Data(bytes)
 }
@@ -69,15 +69,39 @@ public func pack(_ value: MessagePackValue) -> Data {
     case .bool(let value):
         return Data([value ? 0xc3 : 0xc2])
 
-    case .int(let value):
-        if value >= 0 {
-            return packPositiveInteger(UInt64(value))
+    case .int8(let value):
+        if value < 0, value >= -0x20 {
+            // negative fixnum
+            return Data([0xe0 + 0x1f & UInt8(truncatingIfNeeded: value)])
         } else {
-            return packNegativeInteger(value)
+            return Data([0xd0, UInt8(bitPattern: value)])
         }
 
-    case .uint(let value):
-        return packPositiveInteger(value)
+    case .int16(let value):
+        return Data([0xd1]) + packInteger(UInt64(bitPattern: Int64(value)), parts: 2)
+
+    case .int32(let value):
+        return Data([0xd2]) + packInteger(UInt64(bitPattern: Int64(value)), parts: 4)
+
+    case .int64(let value):
+        return Data([0xd3]) + packInteger(UInt64(bitPattern: Int64(value)), parts: 8)
+
+    case .uint8(let value):
+        if value <= 0x7f {
+            // positive fixnum
+            return Data([value])
+        } else {
+            return Data([0xcc, value])
+        }
+
+    case .uint16(let value):
+        return Data([0xcd]) + packInteger(UInt64(value), parts: 2)
+
+    case .uint32(let value):
+        return Data([0xce]) + packInteger(UInt64(value), parts: 4)
+
+    case .uint64(let value):
+        return Data([0xcf]) + packInteger(value, parts: 8)
 
     case .float(let value):
         return Data([0xca]) + packInteger(UInt64(value.bitPattern), parts: 4)
